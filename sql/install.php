@@ -46,20 +46,6 @@ try {
     Db::getInstance()->execute($sql_new_fields);
 } catch (Exception $e) {
 }
-    
-// Add certified_mail field to customer table
-try {
-    $sql_add_fic_certified_mail =  'ALTER TABLE `'. _DB_PREFIX_.'customer` ADD `fic_certified_email` varchar(255)';
-    Db::getInstance()->execute($sql_add_fic_certified_mail);
-} catch (Exception $e) {
-}
-
-// Add ei_code field to customer table
-try {
-    $sql_add_fic_ei_code =  'ALTER TABLE `'. _DB_PREFIX_.'customer` ADD `fic_ei_code` varchar(7)';
-    Db::getInstance()->execute($sql_add_fic_ei_code);
-} catch (Exception $e) {
-}
 
 // Add client_id to address table
 try {

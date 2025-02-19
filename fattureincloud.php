@@ -66,16 +66,6 @@ class fattureincloud extends Module
         // Hook for invoice download
         $this->registerHook('displayPDFInvoice');
             
-        // Hooks for additional customer fields on front-end
-        $this->registerHook('additionalCustomerFormFields');
-        $this->registerHook('actionCustomerAccountAdd');
-        $this->registerHook('actionCustomerAccountUpdate');
-        
-        // Hooks for additional customer fields on back-end
-        $this->registerHook('actionCustomerFormBuilderModifier');
-        $this->registerHook('actionAfterCreateCustomerFormHandler');
-        $this->registerHook('actionAfterUpdateCustomerFormHandler');
-            
         // Hooks for additional tax field on back-end
         $this->registerHook('actionTaxFormBuilderModifier');
         $this->registerHook('actionAfterCreateTaxFormHandler');
@@ -390,61 +380,14 @@ class fattureincloud extends Module
     }
     
     /**
-     * Read extra customer fields values
-     */
-    protected function readExtraCustomerValues($id_customer = null)
-    {
-        if ($id_customer == null) {
-            $id_customer = Context::getContext()->customer->id;
-        }
-        
-        $query = 'SELECT c.`fic_certified_email`, c.`fic_ei_code`'
-            .' FROM `'. _DB_PREFIX_.'customer` c '
-            .' WHERE c.id_customer = '.(int)$id_customer;
-            
-        return  Db::getInstance(_PS_USE_SQL_SLAVE_)->getRow($query);
-    }
-    
-    /**
-     * Prepare extra customer fields values from front-end for saving
-     */
-    protected function writeExtraCustomerValuesForFrontend($id_customer)
-    {
-        $fic_certified_email_value = Tools::getValue('fic_certified_email');
-        $fic_ei_code_value = Tools::getValue('fic_ei_code');
-        
-        $result = $this->writeExtraCustomerValues($id_customer, $fic_certified_email_value, $fic_ei_code_value);
-    }
-    
-    /**
-     * Prepare extra customer fields values from back-end for saving
-     */
-    protected function writeExtraCustomerValuesForBackend($id_customer, $form_data)
-    {
-        $fic_certified_email_value = $form_data['fic_certified_email'];
-        $fic_ei_code_value = $form_data['fic_ei_code'];
-        
-        $result = $this->writeExtraCustomerValues($id_customer, $fic_certified_email_value, $fic_ei_code_value);
-    }
-    
-    /**
-     * Write extra customer fields to database
-     */
-    protected function writeExtraCustomerValues($id_customer, $fic_certified_email_value, $fic_ei_code_value)
-    {
-        $query = 'UPDATE `'._DB_PREFIX_.'customer` c '
-            .' SET  c.`fic_certified_email` = "'.pSQL($fic_certified_email_value).'", c.`fic_ei_code` = "'.pSQL($fic_ei_code_value).'"'
-            .' WHERE c.id_customer = '.(int)$id_customer;
-        
-        $result = Db::getInstance()->execute($query);
-    }
-    
-    /**
      * Read extra address fields values
      */
     protected function readExtraAddressValues($id_address = null)
     {
-        $query = 'SELECT a.`fic_client_id`'
+        $query = 'SELECT 
+                    a.`fic_client_id`,
+                    a.`sdi` as ei_code,
+                    a.`pec` as certified_email'
             .' FROM `'. _DB_PREFIX_.'address` a '
             .' WHERE a.id_address = '.(int)$id_address;
             
@@ -488,141 +431,7 @@ class fattureincloud extends Module
             $result = Db::getInstance()->execute($query);
         }
     }
-    
-    /**
-     * Add extra customer fields to back-end customer form
-     */
-    public function hookActionCustomerFormBuilderModifier($params)
-    {
-        $formBuilder = $params['form_builder'];
-        $route = $params['route'];
-       
-        $allFields = $formBuilder->all();
-        
-        foreach ($allFields as $inputField => $input) {
-            $formBuilder->remove($inputField);
-        }
-        
-        $fic_certified_email_value = "";
-        $fic_ei_code_value = "";
-        
-        if ($route == "admin_customers_edit") {
-            $fic_extra_fields = $this->readExtraCustomerValues($params['id']);
-            $fic_certified_email_value = $fic_extra_fields['fic_certified_email'];
-            $fic_ei_code_value = $fic_extra_fields['fic_ei_code'];
-        }
-        
-        foreach ($allFields as $inputField => $input) {
-            $formBuilder->add($input);
-            
-            if ($inputField == 'email') {
-                $formBuilder->add(
-                    'fic_certified_email',
-                    EmailType::class,
-                    [
-                        'label' => 'E-mail PEC',
-                        'required' => false,
-                        'data' => $fic_certified_email_value
-                    ]
-                );
-                
-                $formBuilder->add(
-                    'fic_ei_code',
-                    TextType::class,
-                    [
-                        'label' => 'Codice SDI',
-                        'required' => false,
-                        'data' => $fic_ei_code_value,
-                        'attr' => ['maxlength' => 7],
-                    ]
-                );
-            }
-        }
-    }
-      
-    /**
-     * Add extra customer fields to front-end customer form
-     */
-    public function hookAdditionalCustomerFormFields($params)
-    {
-        $fic_extra_fields = $this->readExtraCustomerValues();
 
-        $fic_certified_email_value = Tools::getValue('fic_certified_email');
-        $fic_ei_code_value = Tools::getValue('fic_ei_code');
-        
-        if (isset($fic_extra_fields['fic_certified_email'])) {
-            $fic_certified_email_value = $fic_extra_fields['fic_certified_email'];
-        }
-
-        if (isset($fic_extra_fields['fic_ei_code'])) {
-            $fic_ei_code_value = $fic_extra_fields['fic_ei_code'];
-        }
-        
-        $extra_fields = array();
-
-        $extra_fields['fic_certified_email'] = (new FormField)
-            ->setName('fic_certified_email')
-            ->setType('text')
-            ->setValue($fic_certified_email_value)
-            ->setLabel($this->l('E-mail PEC'))
-            ->setConstraints(['isEmail'])
-            ->setAvailableValues(['comment'=>$this->l('Inserisci la PEC o il CODICE SDI se hai bisogno della fattura elettronica')]);
-            
-        $extra_fields['fic_ei_code'] = (new FormField)
-            ->setName('fic_ei_code')
-            ->setType('text')
-            ->setValue($fic_ei_code_value)
-            ->setLabel($this->l('Codice SDI'))
-            ->setMaxLength(7)
-            ->setAvailableValues(['comment'=>$this->l('Inserisci la PEC o il CODICE SDI se hai bisogno della fattura elettronica')]);
-       
-        $position = (int) array_search('email', array_keys($params['fields']), null) + 1;
-
-        $fieldcount = count($params['fields']);
-
-        $result = array_merge(
-            array_slice($params['fields'], 0, $position),
-            $extra_fields,
-            array_slice($params['fields'], $position - $fieldcount)
-        );
-
-        $params['fields'] = $result;
-    }
-    
-    /**
-     * Hook write extra customer fields method to new customer creation on front-end
-     */
-    public function hookActionCustomerAccountAdd($params)
-    {
-        $id = (int)$params['newCustomer']->id;
-        $this->writeExtraCustomerValuesForFrontend($id);
-    }
-    
-    /**
-     * Hook write extra customer fields method to customer update on front-end
-     */
-    public function hookActionCustomerAccountUpdate($params)
-    {
-        $id = (int)$params['customer']->id;
-        $this->writeExtraCustomerValuesForFrontend($id);
-    }
-    
-    /**
-     * Hook write extra customer fields method to new customer creation on back-end
-     */
-    public function hookActionAfterCreateCustomerFormHandler($params)
-    {
-        $this->writeExtraCustomerValuesForBackend($params['id'], $params['form_data']);
-    }
-    
-    /**
-     * Hook write extra customer fields method to customer update on back-end
-     */
-    public function hookActionAfterUpdateCustomerFormHandler($params)
-    {
-        $this->writeExtraCustomerValuesForBackend($params['id'], $params['form_data']);
-    }
-    
     /**
      * Add extra tax fields to back-end tax form
      */
@@ -1174,14 +983,12 @@ class fattureincloud extends Module
             $entity['id'] = $fic_address_fields['fic_client_id'];
         }
         
-        $fic_customer_fields = $this->readExtraCustomerValues($customer_id);
-        
-        if (isset($fic_customer_fields['fic_certified_email'])) {
-            $entity['certified_email'] = $fic_customer_fields['fic_certified_email'];
+        if (isset($fic_address_fields['certified_email'])) {
+            $entity['certified_email'] = $fic_address_fields['certified_email'];
         }
         
-        if (isset($fic_customer_fields['fic_ei_code'])) {
-            $entity['ei_code'] = $fic_customer_fields['fic_ei_code'];
+        if (isset($fic_address_fields['ei_code'])) {
+            $entity['ei_code'] = $fic_address_fields['ei_code'];
         }
             
         $fic_client = $this->initFattureInCloudClient();
