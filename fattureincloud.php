@@ -641,7 +641,13 @@ class fattureincloud extends Module
                     );';
                     
                     Db::getInstance()->execute($query);
-                        
+
+                    $query_update_ps_invoce = 'UPDATE `'._DB_PREFIX_. 'order_invoice`
+                        set number = \'' . $number_to_save . '\'
+                        WHERE id_order = '.$order['id_order'];
+
+                    Db::getInstance()->execute($query_update_ps_invoce);
+
                     $this->writeLog("INFO - Fattura creata: #" . $number_to_save);
                     
                     if (Configuration::get('FATTUREINCLOUD_INVOICES_SEND_TO_SDI')) {
