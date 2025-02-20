@@ -1309,12 +1309,9 @@ class fattureincloud extends Module
             if (Configuration::get('FATTUREINCLOUD_INVOICES_SUFFIX')) {
                 $document['data']['numeration'] = Configuration::get('FATTUREINCLOUD_INVOICES_SUFFIX');
             }
-            
-            if (Configuration::get('FATTUREINCLOUD_INVOICES_SEND_TO_SDI')) {
-                $document['data']['e_invoice'] = true;
-                $document['data']['ei_data'] = $this->getEIPaymentCodeByModule($order->module);
-            }
-        
+
+            $document['data']['e_invoice'] = true;
+            $document['data']['ei_data'] = $this->getEIPaymentCodeByModule($order->module);
         }
         
         return $document;
