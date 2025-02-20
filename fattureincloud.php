@@ -28,7 +28,7 @@ class fattureincloud extends Module
     {
         $this->name = 'fattureincloud';
         $this->tab = 'billing_invoicing';
-        $this->version = '2.2.1';
+        $this->version = '2.2.2';
         $this->author = 'FattureInCloud';
         $this->need_instance = 1;
 
@@ -65,6 +65,7 @@ class fattureincloud extends Module
         $this->registerHook('actionInvoiceNumberFormatted');
         // Hook for invoice download
         $this->registerHook('displayPDFInvoice');
+        $this->registerHook('displayAdminOrderSide');
             
         // Hooks for additional tax field on back-end
         $this->registerHook('actionTaxFormBuilderModifier');
@@ -1282,7 +1283,7 @@ class fattureincloud extends Module
                 "show_payment" => false,
                 "show_payment_method" => true,
                 "rc_center" => Configuration::get('FATTUREINCLOUD_RC_CENTER'),
-                "use_gross_prices" => true
+                "use_gross_prices" => true,
             ),
             "options" => array(
                 "fix_payments" => true
@@ -1444,5 +1445,31 @@ class fattureincloud extends Module
         
         $log_line = "[" . date("Y/m/d h:i:s", time()) . "] [v" . $this->version . "] " . $line . "\n";
         file_put_contents($current_log_file, $log_line, FILE_APPEND);
+    }
+
+    public function hookDisplayAdminOrderSide($params)
+    {
+        $idOrder = $params['id_order'];
+
+        $queryBuilder = $this->get('database_connection')->createQueryBuilder();
+        $queryBuilder
+            ->select('*')
+            ->from(_DB_PREFIX_ . 'fattureInCloud', 'fic')
+            ->where('fic.ps_order_id = :idOrder');
+
+        $queryBuilder->setParameter('idOrder', $idOrder);
+
+        $invoice = $queryBuilder->execute()->fetch();
+
+        if($invoice) {
+            $this->context->smarty->assign([
+                'download_url' => $invoice['fic_invoice_download_url'],
+                'edit_url' => 'https://secure.fattureincloud.it/invoices/edit/' . $invoice['fic_invoice_id'],
+                'number' => $invoice['fic_invoice_number']
+            ]);
+
+            return $this->display(__FILE__, 'invoice_details.tpl');
+        }
+
     }
 }
