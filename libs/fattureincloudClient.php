@@ -184,6 +184,12 @@ class FattureInCloudClient
         
         return $return;
     }
+
+    public function listIssuedDocument($params = ['type' => 'invoice']) {
+        $return = $this->makeCompanyRequest("issued_documents", $params);
+
+        return $return;
+    }
     
     public function verifyEInvoiceXML($invoiceId)
     {

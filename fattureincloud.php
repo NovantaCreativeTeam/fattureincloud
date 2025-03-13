@@ -592,7 +592,9 @@ class fattureincloud extends Module
         if (Configuration::get('FATTUREINCLOUD_INVOICES_CREATE')
             && $order_status->paid == true
             && ($order_complete->current_state == Configuration::get('PS_OS_PAYMENT')
-                || $order_complete->current_state == Configuration::get('PS_OS_WS_PAYMENT'))
+                || $order_complete->current_state == Configuration::get('PS_OS_WS_PAYMENT')
+                || $order_complete->current_state == 40 // Stato fatturato
+            )
             ) {
             $this->writeLog("INFO - Creazione Fattura: " . $order_id);
             
@@ -601,9 +603,9 @@ class fattureincloud extends Module
             $fic_client = $this->initFattureInCloudClient();
             
             // Check if document already exists
-            $sql_invoice_check = 'SELECT * FROM  `'._DB_PREFIX_.'fattureInCloud` WHERE `ps_order_id` = '.$order_id.' AND fic_invoice_id IS NOT NULL';
+            // $sql_invoice_check = 'SELECT * FROM  `'._DB_PREFIX_.'fattureInCloud` WHERE `ps_order_id` = '.$order_id.' AND fic_invoice_id IS NOT NULL';
         
-            if ($row_invoice_check = Db::getInstance()->getRow($sql_invoice_check)) {
+            if ($row_invoice_check = $this->getOrderInvoice($order_id)) {
                 $get_document_detail_request = $fic_client->getIssuedDocumentDetails($row_invoice_check['fic_invoice_id']);
                 
                 if (isset($get_document_detail_request['error'])) {
@@ -892,7 +894,7 @@ class fattureincloud extends Module
             }
             
             if (!empty($payment_module_details->details)) {
-                $ei_payment['bank_iban'] = $payment_module_details->details;
+                $ei_payment['bank_iban'] = substr($payment_module_details->details, 0, 27);
             }
         } 
         
@@ -1446,17 +1448,7 @@ class fattureincloud extends Module
 
     public function hookDisplayAdminOrderSide($params)
     {
-        $idOrder = $params['id_order'];
-
-        $queryBuilder = $this->get('database_connection')->createQueryBuilder();
-        $queryBuilder
-            ->select('*')
-            ->from(_DB_PREFIX_ . 'fattureInCloud', 'fic')
-            ->where('fic.ps_order_id = :idOrder');
-
-        $queryBuilder->setParameter('idOrder', $idOrder);
-
-        $invoice = $queryBuilder->execute()->fetch();
+        $invoice = $this->getOrderInvoice($params['id_order']);
 
         if($invoice) {
             $this->context->smarty->assign([
@@ -1467,6 +1459,90 @@ class fattureincloud extends Module
 
             return $this->display(__FILE__, 'invoice_details.tpl');
         }
-
     }
+
+
+    public function getOrderInvoice($idOrder) {
+        $invoice = null;
+
+        /** @var \Doctrine\DBAL\Query\QueryBuilder $queryBuilder */
+        $queryBuilder = $this->get('database_connection')->createQueryBuilder();
+        $queryBuilder
+            ->select('*')
+            ->from(_DB_PREFIX_ . 'fattureInCloud', 'fic')
+            ->where('fic.ps_order_id = :idOrder');
+
+        $queryBuilder->setParameter('idOrder', $idOrder);
+        $invoice = $queryBuilder->execute()->fetch();
+
+        if(!$invoice) {
+            $order = new Order($idOrder);
+            $fic_client = $this->initFattureInCloudClient();
+            $issuedDocuments = $fic_client->listIssuedDocument([
+                'type' => 'invoice',
+                'fieldset' => 'detailed',
+                'q' => "any_subject = 'Ordine #" . $order->reference . "'",
+                'sort' => '-date',
+                'per_page' => 100
+            ]);
+
+            if($issuedDocuments['total'] > 0) {
+                $invoiceToSave = $issuedDocuments['data'][0];
+
+                // Insert invoice from FattureInCloud
+                $number_to_save = $invoiceToSave['numeration'] == '' ?  ($invoiceToSave['number'] . '/' . $invoiceToSave['year']) : $invoiceToSave['numeration'];
+                $token = pathinfo($invoiceToSave['url'], PATHINFO_FILENAME);
+
+                try {
+                    $values = [
+                        'ps_order_id' => $idOrder,
+                        'fic_invoice_id' => $invoiceToSave['id'],
+                        'fic_invoice_number' => ':number',
+                        'fic_invoice_download_token' => ':token',
+                        'fic_invoice_download_url' => ':url'
+                    ];
+
+                    $queryBuilder->resetQueryParts();
+
+                    $queryBuilder->insert(_DB_PREFIX_ . 'fattureInCloud');
+                    $queryBuilder->values($values);
+                    $queryBuilder->setParameter('number', $number_to_save);
+                    $queryBuilder->setParameter('token', $token);
+                    $queryBuilder->setParameter('url', $invoiceToSave['url']);
+
+                    if($queryBuilder->execute()) {
+                        $invoice = $values;
+                    }
+
+                    // Update invoice number in order_invoice Table
+                    $queryBuilder->resetQueryParts();
+
+                    $queryBuilder
+                        ->update(_DB_PREFIX_ . 'order_invoice', 'oi')
+                        ->set('oi.number', ':number')
+                        ->where('oi.id_order = :idOrder');
+
+                    $queryBuilder->setParameter('number', $number_to_save);
+                    $queryBuilder->setParameter('idOrder', $idOrder);
+                    $queryBuilder->execute();
+                } catch (\Exception $e) {
+
+                }
+
+                // Get inserted invoice
+                // $queryBuilder = $this->get('database_connection')->createQueryBuilder();
+                $queryBuilder->resetQueryParts();
+                $queryBuilder
+                    ->select('*')
+                    ->from(_DB_PREFIX_ . 'fattureInCloud', 'fic')
+                    ->where('fic.ps_order_id = :idOrder');
+
+                $queryBuilder->setParameter('idOrder', $idOrder);
+                $invoice = $queryBuilder->execute()->fetch();
+            }
+        }
+
+        return $invoice;
+    }
+
 }
